@@ -24,7 +24,7 @@ def _parse_zh_month_any(s: str) -> pd.Timestamp:
 FREQ = "D"                      # "D"日 / "W-FRI"周五 / "ME"月末
 BASE_DATE = "2014-01-01"        # 改这里：10年窗口
 TITLE = f"中国10年宏观 × 六大指数（{FREQ} 频）"   # 可选：标题写 10年
-OUT_PNG, OUT_CSV, OUT_HTML = "china_10yr_macro_equity.png", "macro_equity_10yr_highfreq.csv", "macro_equity_10yr_highfreq.html"
+OUT_PNG, OUT_CSV, OUT_HTML = "china_10yr_macro_equity.png", "china_10yr_macro_equity.csv", "china_10yr_macro_equity.html"
 START_DATE, TODAY = "20140101", dt.date.today().strftime("%Y%m%d")
 YESTERDAY = dt.date.today() - dt.timedelta(days=1)
 END_DATE = YESTERDAY.strftime("%Y%m%d")           # 给 akshare 接口用
