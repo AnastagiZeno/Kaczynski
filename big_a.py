@@ -355,8 +355,8 @@ INTRO = f"""
       <p class="desc">左轴：六大股指（基期=2014-01=100）；右轴：M2/CPI 同比（%）。图例可点击开关各曲线；支持框选放大、双击重置。{AS_OF_TXT}</p>
     </div>
     <div class="links" style="margin-left:auto;">
-      <a href='{OUT_CSV}' download>CSV</a>
-      <a href='{OUT_PNG}' download>PNG</a>
+      <a href='html/{OUT_CSV}' download>CSV</a>
+      <a href='html/{OUT_PNG}' download>PNG</a>
     </div>
   </div>
   <div class="card"><!-- PLOTLY_CHART --></div>
