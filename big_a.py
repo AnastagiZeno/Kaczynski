@@ -23,25 +23,27 @@ def _parse_zh_month_any(s: str) -> pd.Timestamp:
 
 FREQ = "D"                      # "D"日 / "W-FRI"周五 / "ME"月末
 BASE_DATE = "2014-01-01"        # 改这里：10年窗口
-TITLE = f"中国10年宏观 × 六大指数（{FREQ} 频）"   # 可选：标题写 10年
+TITLE = f"中国10年宏观 × 六大指数（{FREQ} 频）"
 OUT_PNG, OUT_CSV, OUT_HTML = "china_10yr_macro_equity.png", "china_10yr_macro_equity.csv", "china_10yr_macro_equity.html"
 START_DATE, TODAY = "20140101", dt.date.today().strftime("%Y%m%d")
 YESTERDAY = dt.date.today() - dt.timedelta(days=1)
 END_DATE = YESTERDAY.strftime("%Y%m%d")           # 给 akshare 接口用
-END_TS = pd.Timestamp(YESTERDAY)                   # 给 pandas 过滤用
+END_TS = pd.Timestamp(YESTERDAY)                  # 给 pandas 过滤用
+
+# 最近5年的起点（用于Plotly初始窗口）
+FIVE_YEARS_AGO = END_TS - pd.DateOffset(years=5)
 
 plt.rcParams["font.sans-serif"] = ["PingFang SC","Arial Unicode MS","Microsoft YaHei","DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-# ===== 指数映射：只保留 上证 / 新能源 / 芯片 / 半导体 / 高端制造 / 消费 =====
-# [CHANGE]：缩减到 6 条，并新增「芯片」「消费」两条
+# ===== 指数映射：上证 / 新能源 / 芯片 / 半导体 / 高端装备制造 / 消费 =====
 INDEX_MAP = {
     "上证综指": "sh000001",          # 上证
-    "新能源": "sz399417",        # 新能源
-    "芯片(980017.SZ)": "sz980017",          # 芯片：国证半导体芯片指数
-    "半导体": "sz399812",       # 半导体
-    "高端装备制造": "sz399396",   # 高端制造
-    "消费": "sh000932",          # 消费
+    "新能源": "sz399417",            # 中证新能源
+    "芯片(980017.SZ)": "sz980017",   # 国证半导体芯片指数
+    "半导体": "sz399812",           # 半导体（可替399801）
+    "高端装备制造": "sz399396",      # 中证装备产业，近似高端制造
+    "消费": "sh000932",              # 中证消费
 }
 
 # ===== 工具函数 =====
@@ -60,7 +62,8 @@ def _get_index_close_primary(symbol: str) -> pd.DataFrame:
 def _get_index_close_fallback(symbol_code: str) -> pd.DataFrame:
     code = symbol_code.replace("sz","").replace("sh","")
     df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=START_DATE, end_date=END_DATE)
-    if not {"日期","收盘"}.issubset(df.columns): raise ValueError("fallback结构变化")
+    if not {"日期","收盘"}.issubset(df.columns):
+        raise ValueError("fallback结构变化")
     df = df.rename(columns={"日期":"date","收盘":"close"})
     df["date"] = pd.to_datetime(df["date"])
     df = df[df["date"] <= END_TS]
@@ -131,7 +134,7 @@ for name, sym in INDEX_MAP.items():
         raw = raw[(raw.index >= pd.to_datetime(BASE_DATE)) & (raw.index <= END_TS)]
         raw_series[name] = raw["close"]
         base = raw["close"].iloc[0]
-        series[name] = raw["close"]/base*100.0
+        series[name] = raw["close"] / base * 100.0
         print(f"[OK] {name} {len(raw)}点（{FREQ}）")
     except Exception as e:
         print(f"[WARN] {name} 失败：{e}")
@@ -215,45 +218,55 @@ except Exception as e:
     cpi_yoy = pd.DataFrame()
 
 df_all = equity_df.copy()
-if m2_yoy is not None: df_all = df_all.join(m2_yoy, how="left")
-if cpi_yoy is not None: df_all = df_all.join(cpi_yoy, how="left")
-df_all.to_csv(OUT_CSV, encoding="utf-8-sig"); print(f"✅ CSV：{OUT_CSV}")
+if m2_yoy is not None:
+    df_all = df_all.join(m2_yoy, how="left")
+if cpi_yoy is not None:
+    df_all = df_all.join(cpi_yoy, how="left")
+df_all.to_csv(OUT_CSV, encoding="utf-8-sig")
+print(f"✅ CSV：{OUT_CSV}")
 
 # ===== 静态 PNG（PPT备用）=====
-plt.figure(figsize=(16,8))
+plt.figure(figsize=(16, 8))
 for cname in equity_df.columns:
     plt.plot(equity_df.index, equity_df[cname], label=cname, linewidth=1.2)
-ax = plt.gca(); ax2 = ax.twinx()
-if "M2同比(%)" in df_all.columns: ax2.plot(df_all.index, df_all["M2同比(%)"], linestyle="--", label="M2同比(%)")
-if "CPI同比(%)" in df_all.columns: ax2.plot(df_all.index, df_all["CPI同比(%)"], linestyle=":", label="CPI同比(%)")
-ax.set_title(TITLE, fontsize=16); ax.set_ylabel("指数（归一化=100）"); ax2.set_ylabel("同比(%)")
-lines, labels = ax.get_legend_handles_labels(); lines2, labels2 = ax2.get_legend_handles_labels()
-ax2.legend(lines+lines2, labels+labels2, loc="upper left", fontsize=10); ax.grid(alpha=.3)
-plt.tight_layout(); plt.savefig(OUT_PNG, dpi=200); print(f"✅ PNG：{OUT_PNG}")
+ax = plt.gca()
+ax2 = ax.twinx()
+if "M2同比(%)" in df_all.columns:
+    ax2.plot(df_all.index, df_all["M2同比(%)"], linestyle="--", label="M2同比(%)")
+if "CPI同比(%)" in df_all.columns:
+    ax2.plot(df_all.index, df_all["CPI同比(%)"], linestyle=":", label="CPI同比(%)")
+ax.set_title(TITLE, fontsize=16)
+ax.set_ylabel("指数（归一化=100）")
+ax2.set_ylabel("同比(%)")
+lines, labels = ax.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax2.legend(lines + lines2, labels + labels2, loc="upper left", fontsize=10)
+ax.grid(alpha=.3)
+plt.tight_layout()
+plt.savefig(OUT_PNG, dpi=200)
+print(f"✅ PNG：{OUT_PNG}")
 
 # ===== 交互 HTML（宽屏 + 无重叠）=====
 
-# [CHANGE]：默认点亮的 5 条线（新能源 / 芯片 / 半导体 / 高端制造 / 消费）
+# 默认点亮：新能源 / 芯片 / 消费
 DEFAULT_ON = {
-    "中证新能源(399417.SZ)",
-    "国证芯片(980017.SZ)",
-    "中证半导体(399801.SZ)",
-    "中证高端装备制造(931151.CSI)",
-    "中证消费(000932.SH)",
+    "新能源",
+    "芯片(980017.SZ)",
+    "消费",
 }
 
 fig = go.Figure()
 for cname in equity_df.columns:
-    visible = True if cname in DEFAULT_ON else "legendonly"  # 上证默认不亮
+    visible = True if cname in DEFAULT_ON else "legendonly"
     fig.add_trace(go.Scatter(
         x=equity_df.index,
         y=equity_df[cname],
         mode="lines",
         name=cname,
-        hovertemplate="%{x|%Y-%m-%d}<br>"+cname+"：%{y:.2f}",
+        hovertemplate="%{x|%Y-%m-%d}<br>" + cname + "：%{y:.2f}",
         line=dict(width=1.3),
         connectgaps=True,
-        visible=visible,          # [CHANGE] 关键：控制初始是否点亮
+        visible=visible,
     ))
 
 if "M2同比(%)" in df_all.columns:
@@ -279,23 +292,28 @@ fig.update_layout(
     legend=dict(orientation="h", yanchor="bottom", y=1.12, xanchor="right", x=1),
     xaxis=dict(
         title=None,
+        # 初始显示最近5年
+        range=[FIVE_YEARS_AGO, END_TS],
         rangeselector=dict(
             buttons=[
                 dict(count=6, label="6月", step="month", stepmode="backward"),
                 dict(count=1, label="1年", step="year", stepmode="backward"),
                 dict(count=3, label="3年", step="year", stepmode="backward"),
                 dict(count=5, label="5年", step="year", stepmode="backward"),
-                dict(step="all", label="10年")
+                dict(step="all", label="10年"),
             ],
             x=0, xanchor="left", y=1.12, yanchor="bottom",
-            bgcolor="rgba(255,255,255,0.6)", activecolor="rgba(27,115,232,0.2)",
-            font=dict(size=12)
+            bgcolor="rgba(255,255,255,0.6)",
+            activecolor="rgba(27,115,232,0.2)",
+            font=dict(size=12),
         ),
-        rangeslider=dict(visible=False)
+        rangeslider=dict(visible=False),
+        # 中文刻度：2025年07月
+        tickformat="%Y年%m月",
     ),
     yaxis=dict(visible=False),
     yaxis2=dict(visible=False),
-    margin=dict(l=60, r=60, t=120, b=60)
+    margin=dict(l=60, r=60, t=120, b=60),
 )
 
 CSS = """
@@ -381,6 +399,7 @@ HTML = f"""<!doctype html>
 <body>{INTRO.replace("<!-- PLOTLY_CHART -->", plot_html)}
 </body></html>"""
 
-with open(OUT_HTML,"w",encoding="utf-8") as f: f.write(HTML)
+with open(OUT_HTML, "w", encoding="utf-8") as f:
+    f.write(HTML)
 print(f"✅ HTML：{OUT_HTML}")
 print("完成")
