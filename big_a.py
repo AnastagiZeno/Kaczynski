@@ -273,13 +273,15 @@ if "M2同比(%)" in df_all.columns:
     fig.add_trace(go.Scatter(
         x=df_all.index, y=df_all["M2同比(%)"], name="M2同比(%)",
         mode="lines", line=dict(dash="dash", width=1.5), yaxis="y2",
-        hovertemplate="%{x|%Y-%m-%d}<br>M2同比：%{y:.2f}%"
+        hovertemplate="%{x|%Y-%m-%d}<br>M2同比：%{y:.2f}%",
+        visible="legendonly"
     ))
 if "CPI同比(%)" in df_all.columns:
     fig.add_trace(go.Scatter(
         x=df_all.index, y=df_all["CPI同比(%)"], name="CPI同比(%)",
         mode="lines", line=dict(dash="dot", width=1.5), yaxis="y2",
-        hovertemplate="%{x|%Y-%m-%d}<br>CPI同比：%{y:.2f}%"
+        hovertemplate="%{x|%Y-%m-%d}<br>CPI同比：%{y:.2f}%",
+        visible="legendonly"
     ))
 
 fig.update_layout(
