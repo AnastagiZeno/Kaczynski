@@ -33,16 +33,15 @@ END_TS = pd.Timestamp(YESTERDAY)                   # 给 pandas 过滤用
 plt.rcParams["font.sans-serif"] = ["PingFang SC","Arial Unicode MS","Microsoft YaHei","DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
+# ===== 指数映射：只保留 上证 / 新能源 / 芯片 / 半导体 / 高端制造 / 消费 =====
+# [CHANGE]：缩减到 6 条，并新增「芯片」「消费」两条
 INDEX_MAP = {
-    "上证综指(000001.SH)": "sh000001",
-    "沪深300(000300.SH)": "sh000300",
-    "创业板指(399006.SZ)": "sz399006",
-    "中证新能源(399417.SZ)": "sz399417",
-    # "中证半导体(399801.SZ)": "sz399801",
-    # "中证高端装备制造(931151.CSI)": "931151",
-    # "国证芯片(931160.CSI)": "931160",
-    "中证电子(399813.SZ)": "sz399813",
-    "国证高端装备(399967.SZ)": "sz399967",
+    "上证综指": "sh000001",          # 上证
+    "新能源": "sz399417",        # 新能源
+    "芯片(980017.SZ)": "sz980017",          # 芯片：国证半导体芯片指数
+    "半导体": "sz399812",       # 半导体
+    "高端装备制造": "sz399396",   # 高端制造
+    "消费": "sh000932",          # 消费
 }
 
 # ===== 工具函数 =====
@@ -55,18 +54,17 @@ def _get_index_close_primary(symbol: str) -> pd.DataFrame:
     else:
         raise ValueError("未找到日期字段")
     df["date"] = pd.to_datetime(df["date"])
-    df = df[(df["date"] >= pd.to_datetime(START_DATE)) & (df["date"] <= END_TS)]  # ← 用 END_TS
+    df = df[(df["date"] >= pd.to_datetime(START_DATE)) & (df["date"] <= END_TS)]
     return df[["date","close"]].set_index("date").sort_index()
 
 def _get_index_close_fallback(symbol_code: str) -> pd.DataFrame:
     code = symbol_code.replace("sz","").replace("sh","")
-    df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=START_DATE, end_date=END_DATE)  # ← 用 END_DATE
+    df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=START_DATE, end_date=END_DATE)
     if not {"日期","收盘"}.issubset(df.columns): raise ValueError("fallback结构变化")
     df = df.rename(columns={"日期":"date","收盘":"close"})
     df["date"] = pd.to_datetime(df["date"])
-    df = df[df["date"] <= END_TS]  # ← 再保险
+    df = df[df["date"] <= END_TS]
     return df[["date","close"]].set_index("date").sort_index()
-
 
 def get_index_close(symbol: str) -> pd.DataFrame:
     try:
@@ -97,13 +95,11 @@ def load_m2_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
     """
     try:
         t = ak.macro_china_money_supply()
-        # 1) 找日期列：包含“月”的优先；其次任何包含“时/期/份”的列
         month_candidates = [c for c in t.columns if ("月" in c) or ("期" in c) or ("时间" in c)]
         if not month_candidates:
             raise ValueError("未找到月份列")
         month_col = month_candidates[0]
 
-        # 2) 找同比列：优先包含 'M2' 的“同比”，否则取第一列带“同比”
         yoy_col = next((c for c in t.columns if ("M2" in c and "同比" in c)), None)
         if yoy_col is None:
             yoy_candidates = [c for c in t.columns if "同比" in c]
@@ -111,7 +107,6 @@ def load_m2_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
                 raise ValueError("未找到同比列")
             yoy_col = yoy_candidates[0]
 
-        # 3) 解析日期 & 取列
         t["date"] = t[month_col].map(_parse_zh_month_any)
         df = (t[["date", yoy_col]]
               .rename(columns={yoy_col: "M2同比(%)"})
@@ -119,7 +114,6 @@ def load_m2_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
               .set_index("date")
               .sort_index())
 
-        # 4) 月度→月末→对齐到目标频率并前向填充
         monthly = df.copy()
         monthly.index = monthly.index.to_period("M").to_timestamp("M")
         aligned = monthly.reindex(target_index, method="ffill")
@@ -127,7 +121,6 @@ def load_m2_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
     except Exception as e:
         print(f"[WARN] M2 加载失败：{e}")
         return pd.DataFrame()
-
 
 # ===== 抓指数：原始点位 + 归一化 =====
 series, raw_series = {}, {}
@@ -147,7 +140,6 @@ equity_df = pd.DataFrame(series)          # 归一化
 equity_df_raw = pd.DataFrame(raw_series)  # 真实点位
 
 # ===== 宏观：M2/CPI（上采样到同频） =====
-
 def load_cpi_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
     """
     先试 macro_china_cpi（通常更稳，含'全国-同比'等列）
@@ -157,12 +149,9 @@ def load_cpi_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
     """
     df = None
 
-    # 优先源：macro_china_cpi（国家统计局口径）
     try:
         t = ak.macro_china_cpi()
-        # 找月份列（含“月”的列名）
         month_col = next(c for c in t.columns if "月" in c)
-        # 找同比列（优先全国）
         yoy_col = None
         for c in t.columns:
             if ("同比" in c) and ("全国" in c or c.endswith("同比")):
@@ -182,7 +171,6 @@ def load_cpi_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
     except Exception as e:
         print(f"[INFO] CPI首选源 macro_china_cpi 不可用：{e}")
 
-    # 备用源：macro_china_cpi_monthly
     if df is None or df.empty:
         try:
             t = ak.macro_china_cpi_monthly()
@@ -200,12 +188,10 @@ def load_cpi_yoy_aligned(target_index: pd.DatetimeIndex) -> pd.DataFrame:
             print(f"[WARN] CPI备用源 macro_china_cpi_monthly 也不可用：{e}")
             return pd.DataFrame()
 
-    # 月度 → 月末 → 对齐到目标频率索引（前向填充）
     monthly = df.copy()
     monthly.index = monthly.index.to_period("M").to_timestamp("M")
     aligned = monthly.reindex(target_index, method="ffill")
     return aligned[["CPI同比(%)"]]
-
 
 m2_yoy = cpi_yoy = None
 try:
@@ -234,8 +220,9 @@ if cpi_yoy is not None: df_all = df_all.join(cpi_yoy, how="left")
 df_all.to_csv(OUT_CSV, encoding="utf-8-sig"); print(f"✅ CSV：{OUT_CSV}")
 
 # ===== 静态 PNG（PPT备用）=====
-plt.figure(figsize=(16,8))  # 更大
-for cname in equity_df.columns: plt.plot(equity_df.index, equity_df[cname], label=cname, linewidth=1.2)
+plt.figure(figsize=(16,8))
+for cname in equity_df.columns:
+    plt.plot(equity_df.index, equity_df[cname], label=cname, linewidth=1.2)
 ax = plt.gca(); ax2 = ax.twinx()
 if "M2同比(%)" in df_all.columns: ax2.plot(df_all.index, df_all["M2同比(%)"], linestyle="--", label="M2同比(%)")
 if "CPI同比(%)" in df_all.columns: ax2.plot(df_all.index, df_all["CPI同比(%)"], linestyle=":", label="CPI同比(%)")
@@ -245,31 +232,51 @@ ax2.legend(lines+lines2, labels+labels2, loc="upper left", fontsize=10); ax.grid
 plt.tight_layout(); plt.savefig(OUT_PNG, dpi=200); print(f"✅ PNG：{OUT_PNG}")
 
 # ===== 交互 HTML（宽屏 + 无重叠）=====
+
+# [CHANGE]：默认点亮的 5 条线（新能源 / 芯片 / 半导体 / 高端制造 / 消费）
+DEFAULT_ON = {
+    "中证新能源(399417.SZ)",
+    "国证芯片(980017.SZ)",
+    "中证半导体(399801.SZ)",
+    "中证高端装备制造(931151.CSI)",
+    "中证消费(000932.SH)",
+}
+
 fig = go.Figure()
 for cname in equity_df.columns:
+    visible = True if cname in DEFAULT_ON else "legendonly"  # 上证默认不亮
     fig.add_trace(go.Scatter(
-        x=equity_df.index, y=equity_df[cname], mode="lines",
-        name=cname, hovertemplate="%{x|%Y-%m-%d}<br>"+cname+"：%{y:.2f}",
-        line=dict(width=1.3), connectgaps=True
+        x=equity_df.index,
+        y=equity_df[cname],
+        mode="lines",
+        name=cname,
+        hovertemplate="%{x|%Y-%m-%d}<br>"+cname+"：%{y:.2f}",
+        line=dict(width=1.3),
+        connectgaps=True,
+        visible=visible,          # [CHANGE] 关键：控制初始是否点亮
     ))
-if "M2同比(%)" in df_all.columns:
-    fig.add_trace(go.Scatter(x=df_all.index, y=df_all["M2同比(%)"], name="M2同比(%)",
-        mode="lines", line=dict(dash="dash", width=1.5), yaxis="y2",
-        hovertemplate="%{x|%Y-%m-%d}<br>M2同比：%{y:.2f}%"))
-if "CPI同比(%)" in df_all.columns:
-    fig.add_trace(go.Scatter(x=df_all.index, y=df_all["CPI同比(%)"], name="CPI同比(%)",
-        mode="lines", line=dict(dash="dot", width=1.5), yaxis="y2",
-        hovertemplate="%{x|%Y-%m-%d}<br>CPI同比：%{y:.2f}%"))
 
-# ——关键：把年限按钮放左上（x=0），图例放右上（y=1.12），并增加上边距——
+if "M2同比(%)" in df_all.columns:
+    fig.add_trace(go.Scatter(
+        x=df_all.index, y=df_all["M2同比(%)"], name="M2同比(%)",
+        mode="lines", line=dict(dash="dash", width=1.5), yaxis="y2",
+        hovertemplate="%{x|%Y-%m-%d}<br>M2同比：%{y:.2f}%"
+    ))
+if "CPI同比(%)" in df_all.columns:
+    fig.add_trace(go.Scatter(
+        x=df_all.index, y=df_all["CPI同比(%)"], name="CPI同比(%)",
+        mode="lines", line=dict(dash="dot", width=1.5), yaxis="y2",
+        hovertemplate="%{x|%Y-%m-%d}<br>CPI同比：%{y:.2f}%"
+    ))
+
 fig.update_layout(
     template="plotly_white",
-    paper_bgcolor="rgba(0,0,0,0)",  # 背景透明，方便嵌入HTML卡片
-    plot_bgcolor="rgba(0,0,0,0)",   # 绘图区透明
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
     font=dict(size=13, family="PingFang SC, Arial"),
     hoverlabel=dict(bgcolor="white", font_size=12, font_color="black"),
     hovermode="x unified",
-    legend=dict(orientation="h", yanchor="bottom", y=1.12, xanchor="right", x=1),  # 右上
+    legend=dict(orientation="h", yanchor="bottom", y=1.12, xanchor="right", x=1),
     xaxis=dict(
         title=None,
         rangeselector=dict(
@@ -288,10 +295,9 @@ fig.update_layout(
     ),
     yaxis=dict(visible=False),
     yaxis2=dict(visible=False),
-    margin=dict(l=60, r=60, t=120, b=60)  # 顶部更大，防止任何重叠
+    margin=dict(l=60, r=60, t=120, b=60)
 )
 
-# --- 宽屏外壳 + 快照（真实点位） ---
 CSS = """
 <style>
 :root{--bg:#0b0d10;--card:#111418;--muted:#9aa4b2;--text:#e8eef6;--grid:#222831;}
@@ -299,7 +305,7 @@ html.light{--bg:#fff;--card:#f7f8fa;--muted:#667085;--text:#101828;--grid:#e5e7e
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,'Noto Sans SC',sans-serif;}
-.container{max-width:1680px; margin:28px auto; padding:0 20px;} /* 宽！ */
+.container{max-width:1680px; margin:28px auto; padding:0 20px;}
 .header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
 h1{font-size:22px;margin:0} .desc{color:var(--muted);margin:6px 0 0;font-size:13px}
 .links{font-size:13px;color:var(--muted)} .links a{color:#69b1ff;text-decoration:none;margin-left:14px}
@@ -316,22 +322,20 @@ th{text-align:left;color:var(--muted);background:rgba(0,0,0,0.04)}
 </style>
 """
 
-# —— 构建快照（真实点位 + 宏观%）——
 latest_date = equity_df_raw.dropna(how="all").index[-1]
-latest_raw  = equity_df_raw.loc[latest_date]              # 六大指数真实点位
+latest_raw  = equity_df_raw.loc[latest_date]
 macro_cols  = [c for c in ["M2同比(%)","CPI同比(%)"] if c in df_all.columns]
 latest_macro = df_all[macro_cols].iloc[-1] if macro_cols else pd.Series(dtype=float)
 
 snap = pd.concat([latest_raw, latest_macro])
 
-# 股指优先排序：严格按曲线顺序，其次宏观
 order = list(equity_df_raw.columns) + macro_cols
 snap = snap.reindex(order)
 
 def fmt_val(name, v):
     if pd.isnull(v):
         return ""
-    is_equity = name in equity_df_raw.columns   # ← 关键：用列归属判断
+    is_equity = name in equity_df_raw.columns
     if is_equity:
         return f"{v:,.0f}" if abs(v) >= 1000 else f"{v:.2f}"
     else:
